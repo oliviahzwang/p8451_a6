@@ -1,0 +1,196 @@
+---
+title: "P8451 Machine Learning in Public Health - Assignment 6"
+output: word_document
+date: "2023-2-28"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+In preparation for all the analyses below, we will load the following libraries:
+
+```{r}
+library(tidyverse)
+library(rpart)
+library(caret)
+library(rpart.plot)
+library(pROC)
+library(NHANES)
+```
+
+# Part 0: Data Preprocessing
+
+## Data Import and Cleaning 
+
+We will begin by importing the NHANES 1994-2004 data. Next, we will use the `select` function to include the following 11 features in the tidied data set:
+* `Age`
+* `Race1`
+* `Education`
+* `HH_Income`
+* `Weight`
+* `Height`
+* `Pulse`
+* `Diabetes`
+* `BMI`
+* `Phys_Active`
+* `Smoke100`
+
+Finally, we will clean the data by first applying the `clean_names` function, and will remove entries with NA using `na.omit`. 
+
+```{r}
+data("NHANES") 
+
+nhanes = NHANES %>% 
+  select("Age", "Race1", "Education", "HHIncome", "Weight", "Height", "Pulse", "Diabetes", "BMI", "PhysActive", "Smoke100") %>% 
+  janitor::clean_names() %>% 
+  na.omit()
+```
+
+## Centering and Scaling
+
+Below, we center and scale these data. In general, it is always good practice to do so! 
+
+```{r}
+nhanes_numeric = nhanes %>% 
+  select(where(is.numeric)) 
+
+preprocess_setup <- preProcess(nhanes_numeric, method = c("center", "scale"))
+transformed.vals = predict(preprocess_setup, nhanes_numeric)
+```
+
+## Partitioning Data
+
+For the purposes of this analysis, we will partition the data into training and testing using a 70/30 split. This process involves applying the `createDataPartition` function to generate a set of training and testing data with equal proportion of individual with the outcome of interest, i.e., `Diabetes`. The new object `train_index` contains all the indexes of the rows in the original data set contained in the 70% split. The rows indexed to be in the 70% is assigned to a new training data set, and the remaining 30% is assigned to a new testing data set. 
+
+```{r}
+nhanes_tidy$race = nhanes$race1
+nhanes_tidy$education = nhanes$education
+nhanes_tidy$hh_income = nhanes$hh_income
+nhanes_tidy$diabetes = nhanes$diabetes
+nhanes_tidy$phys_active = nhanes$phys_active
+nhanes_tidy$smoke = nhanes$smoke100
+
+train_index = createDataPartition(nhanes_tidy$diabetes, p = 0.7, list = FALSE)
+
+nhanes_train <- nhanes_tidy[train_index,]
+nhanes_test <- nhanes_tidy[-train_index,]
+```
+
+# Part I: Creating Three Different Models
+
+For the purposes of this analysis, we will create and compare the following models: 
+
+1. Classification Tree Model 
+1. Support Vector Classifier Model 
+1. Logistic Regression Model
+
+## 1.1 Model 1: Classification Tree Model 
+
+In the code chunk below, we will use the `trainControl` function to set our validation method. For the purposes of this analysis, we will use the 10-fold cross validation method. 
+
+```{r}
+train_control_tree = trainControl(method = "cv", number = 10, sampling = "down")
+```
+
+Next, we will create a sequence of cp parameters to try, and train the model. We will generate an accuracy metric and confusion matrix from model training. 
+
+```{r}
+set.seed(123)
+
+grid = expand.grid(cp = seq(0.001, 0.3, by = 0.01))
+tree_diabetes = train(diabetes ~ ., 
+                      data = nhanes_train, 
+                      method = "rpart", 
+                      trControl = train_control_tree, 
+                      tuneGrid = grid)
+
+tree_diabetes$bestTune
+
+confusionMatrix(tree_diabetes)
+```
+
+Based on the output above, the average accuracy of Classification Tree model is __0.7198__, and the cp value is __0.001__. 
+
+## 1.2 Model 2: Support Vector Classifier Model 
+
+In the code chunk below, we will use the `trainControl` function to set our validation method. For the purposes of this analysis, we will use the 10-fold cross validation method and will generate predicted probabilities. 
+
+```{r}
+train_control_svm = trainControl(method = "cv", number = 10, classProbs = T)
+```
+
+Next, we will incorporate different values for cost (C) into the model. We will also show information about the final model, and generate the metrics of accuracy from training using the `confusionMatrix` function. 
+
+```{r}
+set.seed(123)
+
+svm_diabetes = train(diabetes ~ ., 
+                     data = nhanes_train, 
+                     method = "svmLinear", 
+                     trControl = train_control_svm, 
+                     preProcess = c("center", "scale"), 
+                     tuneGrid = expand.grid(C = seq(0.001, 2, length = 30)))
+
+svm_diabetes$finalModel
+
+confusionMatrix(svm_diabetes)
+```
+
+Based on the output above, the accuracy of the SVC model is __0.8962__, and the cost value is 0.001. 
+
+## 1.3 Model 3: Logistic Regression Model 
+
+We will employ a similar approach as seen in Parts 1.1 and 1.2 to generate a logistic regression model. First, we will use the `trainControl` function to set our validation method. For the purposes of this analysis, we will use the 10-fold cross validation method. 
+
+```{r}
+train_control_logistic = trainControl(method = "cv", number = 10)
+```
+
+Next, we will train the algorithm by specifying `model = "glm"`. 
+
+```{r}
+set.seed(123)
+
+logistic_diabetes = train(diabetes ~ ., 
+                     data = nhanes_train, 
+                     method = "glm", 
+                     trControl = train_control_logistic, 
+                     preProcess = c("center", "scale"))
+
+logistic_diabetes$finalModel
+
+confusionMatrix(logistic_diabetes)
+```
+
+Based on the output above, the accuracy of the Logistic Regression model is __0.896__. 
+
+# Part II: Comparing Three Different Models
+
+In Part I, we generated evaluation metrics for each of the Classification Tree, SVM and Logistic Regression models. Based on the outputs generated, we know that each model had the following accuracy levels from the test set: 
+
+* Classification Tree Model accuracy: 0.7198
+* SVC Model accuracy: 0.8962
+* Logistic Regression Model accuracy: 0.8960
+
+We can assess the for the most optimal model by comparing these accuracy levels. Since the SVC Model generated the highest accuracy level at 0.8692, we will proceed with the SVC model. 
+
+# Part III: Calculate Final Evaluation Metrics in Test Set with the Optimal Model
+
+It was determined in Part II that the most optimal model is the SVC model, which generated the highest accuracy level. We will apply this model to the testing data set, and will generate evaluation metrics using `confusionMatrix`. 
+
+```{r}
+set.seed(123)
+
+svm_pred_diabetes_test = predict(svm_diabetes, nhanes_test)
+
+confusionMatrix(svm_pred_diabetes_test, nhanes_test$diabetes)
+```
+
+The kappa value is 0, and the Mcnemar's Test p-value is <2e-16. The accuracy level of the SVC model is 0.8966, with a 95% confidence interval of 0.8821 to 0.91. The sensitivity of this model is 1.000 and the specificity of this model is 0.000. The reported prevalence of 0.8966. 
+
+# Part IV: Limitations Discussion
+
+One main limitation of the SVC model is the limited interpretability of results, compared to, for example, regularized regressions. Although it is possible to generate importance factors from these models, it is not as straightforward. 
+
+A second limitation of the SVC model in practice is that it may lead to increased misclassification of points in the event where there is heavy overlap between the data points. More specifically, an optimal model may have an increased C value to better classify _training_ observations; however, this same model may lead to increased misclassification of testing observations, thus causing it to yield sub-optimal testing evaluation metrics. As the SVC model allows for some level of misclassification, there is an important balance that must be struck in order to apply this model successfully in practice. 
