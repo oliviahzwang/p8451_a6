@@ -64,17 +64,10 @@ transformed.vals = predict(preprocess_setup, nhanes_numeric)
 For the purposes of this analysis, we will partition the data into training and testing using a 70/30 split. This process involves applying the `createDataPartition` function to generate a set of training and testing data with equal proportion of individual with the outcome of interest, i.e., `Diabetes`. The new object `train_index` contains all the indexes of the rows in the original data set contained in the 70% split. The rows indexed to be in the 70% is assigned to a new training data set, and the remaining 30% is assigned to a new testing data set. 
 
 ```{r}
-nhanes_tidy$race = nhanes$race1
-nhanes_tidy$education = nhanes$education
-nhanes_tidy$hh_income = nhanes$hh_income
-nhanes_tidy$diabetes = nhanes$diabetes
-nhanes_tidy$phys_active = nhanes$phys_active
-nhanes_tidy$smoke = nhanes$smoke100
+train_index = createDataPartition(nhanes$diabetes, p = 0.7, list = FALSE)
 
-train_index = createDataPartition(nhanes_tidy$diabetes, p = 0.7, list = FALSE)
-
-nhanes_train <- nhanes_tidy[train_index,]
-nhanes_test <- nhanes_tidy[-train_index,]
+nhanes_train <- nhanes[train_index,]
+nhanes_test <- nhanes [-train_index,]
 ```
 
 # Part I: Creating Three Different Models
